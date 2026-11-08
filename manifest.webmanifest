@@ -1,0 +1,22 @@
+{
+  "name": "級數練習本",
+  "short_name": "級數練習本",
+  "description": "吉他和弦級數進行練習：10 種常見進行、百首歌曲、聽和弦、聽音測驗與練習紀錄。",
+  "lang": "zh-Hant",
+  "start_url": "./index.html#book",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2ef",
+  "theme_color": "#1f6b52",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "聽音測驗", "url": "./index.html#ear", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "練習進度", "url": "./index.html#stats", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
