@@ -1,5 +1,5 @@
 // 級數練習本 service worker：離線可用。改版時把 CACHE 的版本號加 1，手機就會自動更新。
-const CACHE = 'chordbook-v1.0.0';
+const CACHE = 'chordbook-v1.1.0';
 const FILES = ['./', './index.html', './app.js', './data.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 

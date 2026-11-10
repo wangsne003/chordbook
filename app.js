@@ -1,7 +1,7 @@
 /* 級數練習本 app.js — © 瑞梅國小 Steve Wang */
 (() => {
 'use strict';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const LS_KEY = 'chordbook-v1';
 
 /* ---------- 樂理工具 ---------- */
@@ -10,6 +10,18 @@ const ALIAS = {'C#':1,'D#':3,'F#':6,'G#':8,'A#':10,'Cb':11,'Fb':4,'E#':5,'B#':0}
 const DEG = {i:0,ii:2,iii:4,iv:5,v:7,vi:9,vii:11};
 const FIT = {same:'★ 同光輝歲月收尾', canon:'標準卡農', variant:'變體'};
 const pretty = k => k ? k[0] + k.slice(1).replace('b','♭').replace('#','♯') : '';
+/* 歌曲原調可以是大調（'D'）或小調（'Dm'） */
+function songKey(k, mode){
+  if(!k) return null;
+  const minor = /m$/.test(String(k).trim());
+  const i = keyIdx(String(k).trim().replace(/m$/,''));
+  if(i<0) return null;
+  const label = minor ? pretty(KEYS[i]) + 'm' : keyLabel(KEYS[i], mode);
+  const hint = capoHint(KEYS[i], minor ? 'minor' : 'major');
+  let play = i;
+  if(minor && mode!=='minor') play = (i+3)%12;
+  return {i, minor, label, hint, play:KEYS[play]};
+}
 function keyIdx(k){ if(!k) return -1; k=String(k).replace('♭','b').replace('♯','#').trim(); const i=KEYS.indexOf(k); return i>=0?i:(k in ALIAS?ALIAS[k]:-1); }
 function parseNum(tok){
   const m = String(tok).trim().match(/^([b#♭♯]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)(°|o|dim|maj7|m7|7|sus4|sus2|add9)?$/);
@@ -186,6 +198,10 @@ function renderBoard(){
   const p = curProg(), key = viewKey(p), isCustom = S.customProgs.some(x=>x.id===p.id);
   const keyOpts = KEYS.map(k=>`<option value="${k}" ${k===key?'selected':''}>${keyLabel(k,p.mode)||pretty(k)}${p.mode==='minor'?'':' 調'}</option>`).join('');
   const isPlaying = playing && playing.tag==='board';
+  if(!p.nums.length){
+    $('board').innerHTML = `<div class="board-head"><h2>${esc(p.name)}</h2></div>${p.desc?`<p class="desc">${esc(p.desc)}</p>`:''}`;
+    return;
+  }
   $('board').innerHTML = `
     <div class="board-head"><h2>${esc(p.name)}</h2>
       <div class="tools"><label for="vk">調</label><select id="vk">${keyOpts}</select>
@@ -218,24 +234,46 @@ function startBoard(){
   renderBoard();
 }
 
+let query='', srcFilter='all';
+const BOOKS = (window.SEED && SEED.books) || {};
+function srcsOf(s){ return Array.isArray(s.src) ? s.src : (s.src ? [s.src] : []); }
+function srcLabel(s){ return srcsOf(s).filter(x=>BOOKS[x.b]).map(x=>`${BOOKS[x.b]} p.${x.p}`).join('、'); }
+function renderSrcSelect(){
+  const sel = $('srcSel'); if(!sel || sel.dataset.ready) return;
+  sel.innerHTML = '<option value="all">全部譜集</option>' + Object.entries(BOOKS).map(([k,v])=>`<option value="${esc(k)}">${esc(v)}</option>`).join('') + '<option value="none">不在譜集裡的歌</option>';
+  sel.dataset.ready='1';
+  sel.value = srcFilter;
+}
 function renderList(){
+  renderSrcSelect();
   const p = curProg();
-  let rows = songs().filter(s=>s.p===p.id).sort((a,b)=>(b.anchor?1:0)-(a.anchor?1:0));
+  const q = query.trim().toLowerCase();
+  let rows = q ? songs().filter(s=>(`${s.t} ${s.a}`).toLowerCase().includes(q))
+               : songs().filter(s=>s.p===p.id);
+  rows.sort((a,b)=>(b.anchor?1:0)-(a.anchor?1:0) || (srcsOf(a).length?1:0)-(srcsOf(b).length?1:0));
+  if(srcFilter==='none') rows = rows.filter(s=>!srcsOf(s).length);
+  else if(srcFilter!=='all') rows = rows.filter(s=>srcsOf(s).some(x=>x.b===srcFilter));
   if(filter==='todo') rows = rows.filter(s=>!prog(s.id).s);
   if(filter==='done') rows = rows.filter(s=>prog(s.id).s);
   const list = $('list');
-  if(!rows.length){ list.innerHTML = `<div class="empty">${filter==='all'?'這組進行還沒有歌，按「＋ 新增歌曲」加第一首。':'這個篩選下沒有歌。'}</div>`; return; }
-  list.innerHTML = rows.map(s=>{
-    const st = prog(s.id), known = keyIdx(s.k)>=0;
+  if(!rows.length){ list.innerHTML = `<div class="empty">${q?`找不到「${esc(query.trim())}」。`:(filter==='all'&&srcFilter==='all'?'這組進行還沒有歌，按「＋ 新增歌曲」加第一首。':'這個篩選下沒有歌。')}</div>`; return; }
+  const head = q ? `<div class="list-head">搜尋全部進行：${rows.length} 首</div>` : (rows.length>12 ? `<div class="list-head">${rows.length} 首</div>` : '');
+  list.innerHTML = head + rows.map(s=>{
+    const st = prog(s.id);
+    const sp = progById(s.p) || p;
+    const sk = songKey(s.k, sp.mode), known = !!sk;
     const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(`${s.t} ${s.a}`);
     const tabUrl = s.tab && /^https?:\/\//.test(s.tab) ? s.tab : '';
     return `<article class="song${s.anchor?' anchor':''}">
       <div class="s-top"><div class="s-title">${esc(s.t)}<small>${esc(s.a)}</small></div>${st.last?`<span class="last">最近 ${esc(st.last)}</span>`:''}</div>
       <div class="meta">
-        <span class="pill key${known?'':' unknown'}">${known?'原調 '+esc(keyLabel(s.k,p.mode)):'原調 待查'}</span>
-        ${known?`<span class="pill">${esc(capoHint(s.k,p.mode))}</span>`:''}
+        <span class="pill key${known?'':' unknown'}">${known?'原調 '+esc(sk.label):'原調 待查'}</span>
+        ${known?`<span class="pill">${esc(sk.hint)}</span>`:''}
+        ${q?`<span class="pill">${esc(sp.name)}</span>`:''}
         ${s.f?`<span class="pill ${esc(s.f)}">${esc(FIT[s.f]||s.f)}</span>`:''}
         ${s.s?`<span class="pill">${esc(s.s)}</span>`:''}
+        ${srcLabel(s)?`<span class="pill src">譜：${esc(srcLabel(s))}</span>`:''}
+        ${s.auto?`<span class="pill auto">自動辨識</span>`:''}
       </div>
       ${s.pt?`<div class="s-prog">${esc(s.pt)}</div>`:''}
       ${s.n?`<p class="s-note">${esc(s.n)}</p>`:''}
@@ -248,7 +286,7 @@ function renderList(){
       <div class="row-actions">
         <a href="${yt}" target="_blank" rel="noopener">YouTube</a>
         ${tabUrl?`<a href="${esc(tabUrl)}" target="_blank" rel="noopener">吉他譜</a>`:''}
-        ${known?`<button data-playkey="${esc(s.k)}">用原調播放</button>`:''}
+        ${known?`<button data-playkey="${esc(sk.play)}" data-prog="${esc(sp.id)}">用原調播放</button>`:''}
         <button data-edit="${esc(s.id)}">編輯</button>
         <button class="del" data-del="${esc(s.id)}">${confirmDel===s.id?'確定刪除？再按一次':'刪除'}</button>
         ${confirmDel===s.id?`<button data-cancel>取消</button>`:''}
@@ -259,7 +297,7 @@ function renderList(){
   list.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openSongForm(songs().find(s=>s.id===b.dataset.edit)));
   list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delSong(b.dataset.del));
   list.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>{ confirmDel=null; renderList(); });
-  list.querySelectorAll('[data-playkey]').forEach(b=>b.onclick=()=>{ S.settings.viewKey[p.id]=b.dataset.playkey; save(false); startBoard(); window.scrollTo({top:0,behavior:'smooth'}); });
+  list.querySelectorAll('[data-playkey]').forEach(b=>b.onclick=()=>{ const pid=b.dataset.prog||p.id; S.settings.sel=pid; S.settings.viewKey[pid]=b.dataset.playkey; save(false); if(query){ query=''; $('q').value=''; } renderChips(); renderList(); startBoard(); window.scrollTo({top:0,behavior:'smooth'}); });
 }
 function toggleStage(id, k){
   const st = {...prog(id)};
@@ -286,14 +324,14 @@ function openSongForm(s){
     <div class="grid2">
       <label class="f">歌名<input id="sf-t" required value="${esc(v.t)}"></label>
       <label class="f">歌手<input id="sf-a" value="${esc(v.a)}"></label>
-      <label class="f">原調<select id="sf-k"><option value="">待查</option>${KEYS.map(k=>`<option value="${k}" ${keyIdx(v.k)===KEYS.indexOf(k)?'selected':''}>${pretty(k)}</option>`).join('')}</select></label>
+      <label class="f">原調<select id="sf-k"><option value="">待查</option><optgroup label="大調">${KEYS.map(k=>`<option value="${k}" ${v.k===k?'selected':''}>${pretty(k)}</option>`).join('')}</optgroup><optgroup label="小調">${KEYS.map(k=>`<option value="${k}m" ${v.k===k+'m'?'selected':''}>${pretty(k)}m</option>`).join('')}</optgroup></select></label>
       <label class="f">級數進行<select id="sf-p">${progs().map(x=>`<option value="${esc(x.id)}" ${x.id===v.p?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
       <label class="f">出現段落<input id="sf-s" placeholder="例：副歌" value="${esc(v.s)}"></label>
       <label class="f">這首的級數寫法<input id="sf-pt" placeholder="例：I–V–vi–IV" value="${esc(v.pt)}"></label>
     </div>
     <label class="f">吉他譜連結<input id="sf-tab" type="url" placeholder="雲端硬碟或網站上的譜" value="${esc(v.tab)}"></label>
     <label class="f">我的筆記<textarea id="sf-memo" rows="2" placeholder="節奏型、卡關的地方…">${esc(st.memo)}</textarea></label>
-    <p class="hint">小調進行的「原調」請選小調主音，例如 A 小調選 A。</p>
+    <p class="hint">小調的歌請在「小調」裡選，例如 A 小調選 Am。</p>
     <div class="actions"><button type="button" class="ghost" id="sf-x">取消</button><button class="primary">${s?'儲存':'加入歌單'}</button></div></form>`;
   $('sf-x').onclick=()=>{ f.hidden=true; f.innerHTML=''; };
   $('sf').onsubmit = e => {
@@ -343,11 +381,13 @@ function openProgForm(p){
   };
 }
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{ filter=b.dataset.f; document.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed', x===b)); renderList(); });
+$('q').addEventListener('input', e=>{ query=e.target.value; renderList(); });
+$('srcSel').addEventListener('change', e=>{ srcFilter=e.target.value; renderList(); });
 function renderBook(){ renderChips(); renderBoard(); renderList(); }
 
 /* ---------- 聽音測驗 ---------- */
 let Q = null, wrongMode = false;
-function quizPool(){ return progs().filter(p=>p.nums.length<=8); }
+function quizPool(){ return progs().filter(p=>p.nums.length>=2 && p.nums.length<=8); }
 function newQuestion(){
   stopPlay();
   const pool = quizPool();
@@ -467,7 +507,7 @@ function tables(){
   const all = songs();
   return {
     progs: progs().map(p=>[p.id, p.name, p.nums.join(' '), p.mode, p.desc||'']),
-    songs: all.map(s=>{ const p=progById(s.p), st=prog(s.id); return [s.id, p?p.name:s.p, s.t, s.a, keyIdx(s.k)>=0?keyLabel(s.k,p&&p.mode):'待查', s.s||'', st.h?'✔':'', st.c?'✔':'', st.s?'✔':'', st.last||'', st.memo||'', s.tab||'']; }),
+    songs: all.map(s=>{ const p=progById(s.p), st=prog(s.id); return [s.id, p?p.name:s.p, s.t, s.a, (songKey(s.k,p&&p.mode)||{label:'待查'}).label, s.s||'', st.h?'✔':'', st.c?'✔':'', st.s?'✔':'', st.last||'', st.memo||'', s.tab||'', srcLabel(s)]; }),
     log: Object.entries(S.log).sort().map(([d,m])=>[d, Math.round(m*10)/10])
   };
 }
